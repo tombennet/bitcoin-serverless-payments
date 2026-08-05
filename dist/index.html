@@ -23,6 +23,11 @@
         border-radius: 3px;
         font-family: "Monaco", "Menlo", monospace;
       }
+      .setup-note {
+        border-left: 3px solid #f7931a;
+        padding-left: 12px;
+        color: #666;
+      }
 
       @media (prefers-color-scheme: dark) {
         body {
@@ -56,10 +61,10 @@
     </p>
 
     <h2>Basic Usage</h2>
-    <div id="bitcoin-donate-basic"></div>
+    <div id="bitcoin-donate-basic" class="demo-widget"></div>
 
     <h2>Use with Lightning (optional)</h2>
-    <div id="bitcoin-donate-lightning"></div>
+    <div id="bitcoin-donate-lightning" class="demo-widget"></div>
 
     <p>
       For full instructions, see the
@@ -76,24 +81,47 @@
     <script src="./bitcoin-pay.min.js"></script>
 
     <script>
-      // Basic usage
-      BitcoinPay.render({
-        selector: "#bitcoin-donate-basic",
-        endpoint: "/.netlify/functions/get-address",
-        bitcoinFallbackAddress: "bc1q...",
-      }).catch((error) => {
-        console.error("Failed to render Bitcoin widget:", error);
-      });
+      // No hardcoded address, so a deployment of this repo never pays someone
+      // else. Set a fixed bitcoinFallbackAddress in your own integration.
+      const endpoint = "/.netlify/functions/get-address";
 
-      // Bitcoin + Lightning configuration
-      BitcoinPay.render({
-        selector: "#bitcoin-donate-lightning",
-        endpoint: "/.netlify/functions/get-address",
-        lightningAddress: "bennet@walletofsatoshi.com",
-        bitcoinFallbackAddress: "bc1q...",
-      }).catch((error) => {
-        console.error("Failed to render Bitcoin widget:", error);
-      });
+      (async () => {
+        let address;
+
+        try {
+          const response = await fetch(endpoint);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          address = (await response.json()).address;
+          if (!address) throw new Error("no address in response");
+        } catch (error) {
+          console.error("Failed to reach the get-address function:", error);
+          document.querySelectorAll(".demo-widget").forEach((el) => {
+            el.innerHTML = `<p class="setup-note">
+              Could not reach <code>${endpoint}</code>. Set
+              <code>BITCOIN_XPUB</code> and <code>BITCOIN_DERIVATION_PATH</code>
+              in <code>.env</code>, then restart <code>npm run dev</code>.
+            </p>`;
+          });
+          return;
+        }
+
+        BitcoinPay.render({
+          selector: "#bitcoin-donate-basic",
+          endpoint,
+          bitcoinFallbackAddress: address,
+        }).catch((error) => {
+          console.error("Failed to render Bitcoin widget:", error);
+        });
+
+        BitcoinPay.render({
+          selector: "#bitcoin-donate-lightning",
+          endpoint,
+          lightningAddress: "bennet@walletofsatoshi.com",
+          bitcoinFallbackAddress: address,
+        }).catch((error) => {
+          console.error("Failed to render Bitcoin widget:", error);
+        });
+      })();
     </script>
   </body>
 </html>
