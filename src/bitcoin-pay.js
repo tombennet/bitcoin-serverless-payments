@@ -53,9 +53,9 @@ class BitcoinPay {
    * @param {string} config.endpoint - The serverless function endpoint URL
    * @param {string} config.selector - CSS selector for the target element(s)
    * @param {string} config.bitcoinFallbackAddress - Fallback Bitcoin address to use if the serverless function fails
-   * @param {string} config.bitcoinDonateText - Optional custom text to display above the Bitcoin address field
+   * @param {string} config.bitcoinDonateText - Optional content above the Bitcoin address field. Inserted as raw HTML
    * @param {string} config.lightningAddress - Optional Lightning address (e.g. "name@provider.com")
-   * @param {string} config.lightningDonateText - Optional custom text to display above the Lightning address field
+   * @param {string} config.lightningDonateText - Optional content above the Lightning address field. Inserted as raw HTML
    * @param {Object} config.options - Optional configuration overrides
    * @returns {Promise<Array>} Array of results for each element (with status and value/reason)
    */

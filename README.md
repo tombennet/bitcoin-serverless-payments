@@ -10,7 +10,7 @@ This repository contains both the serverless backend and an npm package for the 
 
 ### Backend
 
-One click deployment to Netlify - just set your environment variables and you're ready to go.
+One click deployment to Netlify — set your environment variables and deploy.
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/bennet-org/bitcoin-serverless-donations#BITCOIN_XPUB=your_extended_public_key&BITCOIN_DERIVATION_PATH=your_account_path)
 
@@ -105,11 +105,13 @@ import "bitcoin-serverless-donations/css";
 | `selector`               | CSS selector for the target element(s), e.g. `#bitcoin-donate`                     |
 | `endpoint`               | Full URL of your backend function                                                  |
 | `bitcoinFallbackAddress` | Address to use if the backend is unavailable                                       |
-| `bitcoinDonateText`      | Custom text above the Bitcoin address field                                        |
+| `bitcoinDonateText`      | Custom HTML above the Bitcoin address field                                        |
 | `lightningAddress`       | [Lightning address](https://lightningaddress.com/) for dual Bitcoin/Lightning mode |
-| `lightningDonateText`    | Custom text above the Lightning address field                                      |
+| `lightningDonateText`    | Custom HTML above the Lightning address field                                      |
 
 You can render multiple widgets by using a class selector (e.g. `.donation-widget`) or by calling `BitcoinPay.render()` multiple times. See [bitcoin-pay.js](/src/bitcoin-pay.js) for the full API.
+
+> **Note:** `bitcoinDonateText`, `lightningDonateText`, `copyButtonText` and `copiedText` are inserted as raw HTML, so markup in them renders. Don't pass user-supplied or otherwise untrusted content to them.
 
 ### Styling
 

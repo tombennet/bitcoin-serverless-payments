@@ -12,9 +12,9 @@ export interface BitcoinPayOptions {
   height?: number;
   /** Whether to show the copy button */
   showCopyButton?: boolean;
-  /** Text displayed on the copy button */
+  /** Copy button label. Inserted as raw HTML — do not pass untrusted content */
   copyButtonText?: string;
-  /** Text displayed when address is copied */
+  /** Copy button label once copied. Inserted as raw HTML — do not pass untrusted content */
   copiedText?: string;
   /** Cache duration in milliseconds (0 to 1 week) */
   cacheDuration?: number;
@@ -41,11 +41,11 @@ export interface BitcoinPayConfig {
   endpoint: string;
   /** Fallback Bitcoin address to use if the serverless function fails */
   bitcoinFallbackAddress: string;
-  /** Optional custom text to display above the Bitcoin address field */
+  /** Content above the Bitcoin address field. Inserted as raw HTML — do not pass untrusted content */
   bitcoinDonateText?: string;
   /** Optional Lightning address (e.g., "name@provider.com") */
   lightningAddress?: string;
-  /** Optional custom text to display above the Lightning address field */
+  /** Content above the Lightning address field. Inserted as raw HTML — do not pass untrusted content */
   lightningDonateText?: string;
   /** Optional configuration overrides */
   options?: BitcoinPayOptions;
