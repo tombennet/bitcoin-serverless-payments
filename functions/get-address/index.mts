@@ -32,17 +32,23 @@ export default async (req: Request, context: Context) => {
   } catch (error) {
     console.error("Error in get-address function:", error);
 
-    // Handle validation errors with proper response format
-    if (error.message.includes("environment variable is required")) {
-      return createValidationErrorResponse(error.message);
+    const message = error instanceof Error ? error.message : String(error);
+
+    // Misconfiguration: the detail is useful to whoever deployed this
+    if (message.includes("environment variable is required")) {
+      return createValidationErrorResponse(message);
     }
 
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
-      },
-    });
+    // Everything else stays in the log rather than going to unauthenticated callers
+    return new Response(
+      JSON.stringify({ error: "Unable to generate a Bitcoin address" }),
+      {
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
+      }
+    );
   }
 };
