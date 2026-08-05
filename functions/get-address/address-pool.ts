@@ -5,6 +5,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { ripemd160 } from "@noble/hashes/legacy.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { utf8ToBytes, concatBytes, bytesToHex } from "@noble/hashes/utils.js";
+import { isValidBitcoinAddress } from "./validation.js";
 
 export interface AddressPoolEntry {
   index: number;
@@ -22,6 +23,18 @@ export interface AddressPoolState {
 const POOL_SIZE = 5;
 const ROTATION_INTERVAL = 10 * 60 * 1000; // 10 minutes
 const STORE_NAME = "address-pool";
+const ACTIVITY_CHECK_TIMEOUT = 5000; // 5s per mempool.space request
+
+/**
+ * Raised when an address's on-chain activity could not be determined. Kept
+ * distinct from "unused" so an unverifiable address is never served as fresh.
+ */
+export class ActivityCheckError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "ActivityCheckError";
+  }
+}
 
 /**
  * Generate a hash of the environment configuration for cache key versioning
@@ -145,6 +158,27 @@ export function deriveAddress(
   }
 }
 
+/**
+ * Derive an address and verify it decodes before it can be stored or served.
+ * Throws rather than risk publishing an address donors can pay but you cannot see.
+ */
+export function deriveValidatedAddress(
+  xpub: string,
+  purpose: number,
+  index: number
+): string {
+  const address = deriveAddress(xpub, purpose, index);
+
+  if (!isValidBitcoinAddress(address)) {
+    throw new Error(
+      `Derived address at index ${index} failed validation. ` +
+        `Check that BITCOIN_XPUB and BITCOIN_DERIVATION_PATH describe the same account.`
+    );
+  }
+
+  return address;
+}
+
 export class AddressPoolManager {
   private store: ReturnType<typeof getStore>;
   private xpub: string;
@@ -175,64 +209,143 @@ export class AddressPoolManager {
 
   /**
    * Check if an address has activity on mempool.space
+   * @throws {ActivityCheckError} if activity could not be determined
    */
   private async checkAddressActivity(address: string): Promise<boolean> {
+    let data: any;
+
     try {
       const response = await fetch(
-        `https://mempool.space/api/address/${address}`
+        `https://mempool.space/api/address/${address}`,
+        { signal: AbortSignal.timeout(ACTIVITY_CHECK_TIMEOUT) }
       );
 
       if (!response.ok) {
         throw new Error(`Mempool API error: ${response.status}`);
       }
 
-      const data = await response.json();
-
-      // Check if address has any transactions
-      return data.chain_stats?.tx_count > 0 || data.mempool_stats?.tx_count > 0;
+      data = await response.json();
     } catch (error) {
-      console.error(`Failed to check activity for address ${address}:`, error);
-      // On error, assume no activity to be safe
-      return false;
+      // Network failure, timeout or rate limit: refuse to guess
+      throw new ActivityCheckError(
+        `Could not determine activity for address ${address}`,
+        { cause: error }
+      );
     }
+
+    const chainTxCount = data?.chain_stats?.tx_count;
+    const mempoolTxCount = data?.mempool_stats?.tx_count;
+
+    if (typeof chainTxCount !== "number" || typeof mempoolTxCount !== "number") {
+      throw new ActivityCheckError(
+        `Unexpected mempool.space response shape for address ${address}`
+      );
+    }
+
+    return chainTxCount > 0 || mempoolTxCount > 0;
   }
 
   /**
-   * Get the current pool state from Netlify Blobs
+   * Get the current pool state from Netlify Blobs, with its etag so writes can
+   * be made conditional on nothing else having changed it.
    */
-  private async getPoolState(): Promise<AddressPoolState | null> {
+  private async readPoolState(): Promise<{
+    state: AddressPoolState | null;
+    etag?: string;
+  }> {
     try {
-      const data = await this.store.get(this.cacheKey, { type: "json" });
-      return data as AddressPoolState | null;
+      const result = await this.store.getWithMetadata(this.cacheKey, {
+        type: "json",
+      });
+
+      if (!result) return { state: null };
+
+      return {
+        state: result.data as AddressPoolState,
+        etag: result.etag,
+      };
     } catch (error) {
       console.error("Failed to get pool state:", error);
-      return null;
+      return { state: null };
     }
   }
 
   /**
-   * Save the current pool state to Netlify Blobs
+   * Save pool state, but only if the stored entry still matches the etag we
+   * read, so concurrent invocations cannot clobber one another.
+   * @returns Whether this write won the race
    */
-  private async savePoolState(state: AddressPoolState): Promise<void> {
+  private async savePoolState(
+    state: AddressPoolState,
+    etag?: string
+  ): Promise<boolean> {
     try {
-      await this.store.set(this.cacheKey, JSON.stringify(state));
+      const result = await this.store.set(
+        this.cacheKey,
+        JSON.stringify(state),
+        etag ? { onlyIfMatch: etag } : { onlyIfNew: true }
+      );
+      return result.modified;
     } catch (error) {
       console.error("Failed to save pool state:", error);
       throw error;
     }
   }
 
+  /** Read the address a pool state is serving, verifying it on the way out */
+  private currentAddressOf(state: AddressPoolState): string {
+    const entry = state.pool[state.currentIndex];
+
+    if (!entry || !isValidBitcoinAddress(entry.address)) {
+      throw new Error(
+        `Pool state is corrupt: no valid address at index ${state.currentIndex}`
+      );
+    }
+
+    return entry.address;
+  }
+
   /**
-   * Initialize a new address pool
+   * Check that stored state is structurally sound and every address decodes.
+   * Storage is untrusted: a truncated or hand-edited blob must not reach a donor.
    */
-  private async initializePool(): Promise<AddressPoolState> {
+  private isUsablePoolState(state: unknown): state is AddressPoolState {
+    if (!state || typeof state !== "object") return false;
+
+    const candidate = state as AddressPoolState;
+
+    if (!Array.isArray(candidate.pool) || candidate.pool.length === 0) {
+      return false;
+    }
+    if (
+      !Number.isInteger(candidate.currentIndex) ||
+      candidate.currentIndex < 0 ||
+      candidate.currentIndex >= candidate.pool.length
+    ) {
+      return false;
+    }
+    if (typeof candidate.lastRotation !== "number") return false;
+
+    return candidate.pool.every((entry) =>
+      isValidBitcoinAddress(entry?.address)
+    );
+  }
+
+  /**
+   * Initialize a new address pool. Written with `onlyIfNew`, so a concurrent
+   * invocation that created the pool first wins. When replacing state known to
+   * be corrupt, the write is conditional on that entry instead.
+   */
+  private async initializePool(
+    replacingEtag?: string
+  ): Promise<AddressPoolState> {
     const purpose = this.detectPurpose();
     const pool: AddressPoolEntry[] = [];
 
     for (let i = 0; i < POOL_SIZE; i++) {
       pool.push({
         index: i,
-        address: deriveAddress(this.xpub, purpose, i),
+        address: deriveValidatedAddress(this.xpub, purpose, i),
         lastCheck: Date.now(),
         hasActivity: false,
       });
@@ -244,17 +357,27 @@ export class AddressPoolManager {
       pool,
     };
 
-    await this.savePoolState(state);
+    const won = await this.savePoolState(state, replacingEtag);
+
+    if (!won) {
+      const { state: existing } = await this.readPoolState();
+      if (this.isUsablePoolState(existing)) return existing;
+    }
+
     return state;
   }
 
   /**
    * Replace used addresses in the pool with fresh ones
    * Removes used addresses and adds fresh ones to the end, maintaining sequential generation
+   *
+   * @param selectedAddress The address rotation picked, if any. currentIndex is
+   *   re-anchored to it so we serve the address we verified, not merely the first unused one.
    */
-  private async replaceUsedAddresses(
-    state: AddressPoolState
-  ): Promise<AddressPoolState> {
+  private replaceUsedAddresses(
+    state: AddressPoolState,
+    selectedAddress: string | null
+  ): AddressPoolState {
     const usedAddresses = state.pool.filter((entry) => entry.hasActivity);
     const unusedAddresses = state.pool.filter((entry) => !entry.hasActivity);
 
@@ -272,86 +395,113 @@ export class AddressPoolManager {
     const newPool = [...unusedAddresses];
 
     // Generate fresh addresses for each used address
-    for (const usedEntry of usedAddresses) {
+    for (const _usedEntry of usedAddresses) {
       newPool.push({
         index: nextIndex,
-        address: deriveAddress(this.xpub, purpose, nextIndex),
+        address: deriveValidatedAddress(this.xpub, purpose, nextIndex),
         lastCheck: Date.now(),
         hasActivity: false,
       });
       nextIndex++;
     }
 
-    // Update currentIndex to point to the first unused address in the new pool
-    const newCurrentIndex = newPool.findIndex((entry) => !entry.hasActivity);
-    const adjustedCurrentIndex = newCurrentIndex >= 0 ? newCurrentIndex : 0;
+    // Fall back to the first entry, which is freshly derived and so unused
+    const selectedPosition = selectedAddress
+      ? newPool.findIndex((entry) => entry.address === selectedAddress)
+      : -1;
 
     return {
       ...state,
       pool: newPool,
-      currentIndex: adjustedCurrentIndex,
+      currentIndex: selectedPosition >= 0 ? selectedPosition : 0,
     };
   }
 
   /**
-   * Get the current address to serve, handling rotation logic
+   * Get the current address to serve, handling rotation logic. Rotation is
+   * all-or-nothing: if activity cannot be verified, or another invocation
+   * rotated first, stored state is left alone.
    */
   async getCurrentAddress(): Promise<string> {
-    let state = await this.getPoolState();
+    const { state: stored, etag } = await this.readPoolState();
 
-    // Initialize pool if it doesn't exist
-    if (!state) {
-      state = await this.initializePool();
+    if (!stored) {
+      return this.currentAddressOf(await this.initializePool());
+    }
+
+    if (!this.isUsablePoolState(stored)) {
+      console.error("Stored pool state is unusable - reinitialising");
+      return this.currentAddressOf(await this.initializePool(etag));
     }
 
     const now = Date.now();
-    const timeSinceLastRotation = now - state.lastRotation;
 
-    // Check if we need to rotate (10 minutes have passed)
-    if (timeSinceLastRotation >= ROTATION_INTERVAL) {
-      // Always rotate after 10 minutes - find the next unused address
-      let selectedEntry: AddressPoolEntry | null = null;
-      let nextIndex = (state.currentIndex + 1) % state.pool.length;
-
-      // Check addresses in rotation order until we find an unused one
-      for (let i = 0; i < state.pool.length; i++) {
-        const entry = state.pool[nextIndex];
-
-        // Check if this address has activity
-        const hasActivity = await this.checkAddressActivity(entry.address);
-
-        // Update the entry with current activity status
-        entry.hasActivity = hasActivity;
-        entry.lastCheck = now;
-
-        // If this address is unused, select it
-        if (!hasActivity) {
-          selectedEntry = entry;
-          state.currentIndex = nextIndex;
-          break;
-        }
-
-        // Move to next address in rotation
-        nextIndex = (nextIndex + 1) % state.pool.length;
-      }
-
-      // Replace any used addresses we found during rotation with fresh ones
-      state = await this.replaceUsedAddresses(state);
-
-      // If all addresses were used, reset to first address
-      if (!selectedEntry) {
-        state.currentIndex = 0;
-      }
-
-      // Update rotation time
-      state.lastRotation = now;
-
-      // Save the updated state
-      await this.savePoolState(state);
+    if (now - stored.lastRotation < ROTATION_INTERVAL) {
+      return this.currentAddressOf(stored);
     }
 
-    // Return the current address
-    return state.pool[state.currentIndex].address;
+    let rotated: AddressPoolState;
+    try {
+      rotated = await this.rotate(stored, now);
+    } catch (error) {
+      if (error instanceof ActivityCheckError) {
+        console.error(
+          "Skipping rotation - address activity could not be verified:",
+          error.message
+        );
+        return this.currentAddressOf(stored);
+      }
+      throw error;
+    }
+
+    const won = await this.savePoolState(rotated, etag);
+
+    if (!won) {
+      // Another invocation rotated first; serve its result rather than overwrite
+      const { state: fresh } = await this.readPoolState();
+      if (fresh) return this.currentAddressOf(fresh);
+    }
+
+    return this.currentAddressOf(rotated);
+  }
+
+  /**
+   * Advance to the next unused address, replacing any found to have activity.
+   * Operates on a copy so a failed rotation leaves no half-updated state.
+   * @throws {ActivityCheckError} if any address's activity is indeterminate
+   */
+  private async rotate(
+    state: AddressPoolState,
+    now: number
+  ): Promise<AddressPoolState> {
+    const working: AddressPoolState = {
+      ...state,
+      pool: state.pool.map((entry) => ({ ...entry })),
+    };
+
+    let selectedAddress: string | null = null;
+    let candidateIndex = (working.currentIndex + 1) % working.pool.length;
+
+    for (let i = 0; i < working.pool.length; i++) {
+      const entry = working.pool[candidateIndex];
+
+      const hasActivity = await this.checkAddressActivity(entry.address);
+
+      entry.hasActivity = hasActivity;
+      entry.lastCheck = now;
+
+      if (!hasActivity) {
+        selectedAddress = entry.address;
+        working.currentIndex = candidateIndex;
+        break;
+      }
+
+      candidateIndex = (candidateIndex + 1) % working.pool.length;
+    }
+
+    const next = this.replaceUsedAddresses(working, selectedAddress);
+    next.lastRotation = now;
+    return next;
   }
 
   /**
@@ -371,7 +521,7 @@ export class AddressPoolManager {
       lastCheck: number;
     }>;
   }> {
-    const state = await this.getPoolState();
+    const { state } = await this.readPoolState();
 
     if (!state) {
       return {
@@ -415,7 +565,7 @@ export class AddressPoolManager {
    * Force a pool rotation (useful for testing)
    */
   async forceRotation(): Promise<string> {
-    const state = await this.getPoolState();
+    const { state, etag } = await this.readPoolState();
 
     if (!state) {
       throw new Error("No pool state found");
@@ -423,7 +573,7 @@ export class AddressPoolManager {
 
     // Force rotation by setting lastRotation to a time that would trigger rotation
     state.lastRotation = Date.now() - ROTATION_INTERVAL - 1;
-    await this.savePoolState(state);
+    await this.savePoolState(state, etag);
 
     // Get the new address (this will trigger rotation)
     return await this.getCurrentAddress();
