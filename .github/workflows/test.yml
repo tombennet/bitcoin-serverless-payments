@@ -5,9 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Run tests weekly to catch issues from external dependency updates
+  # Catches issues from external dependency updates
   schedule:
-    - cron: "0 0 1 * *" # Every first day of the month at midnight
+    - cron: "0 0 1 * *" # First day of the month at midnight
 
 jobs:
   test:
@@ -31,17 +31,6 @@ jobs:
 
       - name: Run tests
         run: npm test
-
-      - name: Check for test failures
-        if: failure()
-        run: |
-          echo "⚠️ Tests failed! This could indicate:"
-          echo "1. A dependency update changed address derivation"
-          echo "2. Breaking changes in @scure/bip32, @noble/hashes, or @noble/curves"
-          echo "3. Critical regression in address generation logic"
-          echo ""
-          echo "🔍 Review the test output above to identify which addresses changed."
-          echo "⚠️ DO NOT merge if address derivation has changed without thorough investigation!"
 
   dependency-audit:
     runs-on: ubuntu-latest

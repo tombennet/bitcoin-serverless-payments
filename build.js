@@ -57,8 +57,7 @@ async function build() {
       .replace(/__BITCOIN_LOGO__/g, btcDataUri)
       .replace(/__LIGHTNING_LOGO__/g, ltgDataUri);
 
-    // ===== PREPARE BUNDLED CODE =====
-    console.log("📦 Bundling dependencies...");
+    console.log("Bundling dependencies...");
 
     // Read the vendored QR code generator and local svg util
     const qrVendorPath = join(
@@ -93,8 +92,7 @@ async function build() {
       ""
     );
 
-    // ===== CDN BUILD (Bundled, no exports) =====
-    console.log("📦 Building CDN version (bundled)...");
+    console.log("Building CDN version...");
 
     // Remove ESM exports for CDN version
     const cdnSourceCode = coreSourceCode.replace(
@@ -114,7 +112,6 @@ async function build() {
       ${cdnSourceCode}
       `;
 
-    console.log("🔧 Minifying CDN version with Terser...");
     const cdnMinifyResult = await minify(cdnBundledCode, {
       compress: {
         drop_console: true,
@@ -137,8 +134,7 @@ async function build() {
     const cdnOutputPath = join(distDir, "bitcoin-pay.min.js");
     writeFileSync(cdnOutputPath, cdnMinifyResult.code, "utf8");
 
-    // ===== ESM BUILD (Bundled with exports) =====
-    console.log("📦 Building ESM version (bundled)...");
+    console.log("Building ESM version...");
 
     // Create the bundled code for ESM (keep exports)
     const esmBundledCode = `
@@ -174,8 +170,7 @@ async function build() {
     const esmOutputPath = join(distDir, "bitcoin-pay.esm.js");
     writeFileSync(esmOutputPath, esmMinifyResult.code, "utf8");
 
-    // ===== CSS BUILD =====
-    console.log("🎨 Minifying CSS file...");
+    console.log("Minifying CSS...");
     const cssSource = join(__dirname, "src", "bitcoin-pay.css");
     const cssDest = join(distDir, "bitcoin-pay.min.css");
     const cssContent = readFileSync(cssSource, "utf8");
@@ -187,47 +182,21 @@ async function build() {
 
     writeFileSync(cssDest, cssResult.css, "utf8");
 
-    // ===== COPY TYPE DEFINITIONS =====
-    console.log("📘 Copying TypeScript definitions...");
+    console.log("Copying TypeScript definitions...");
     const typesSource = join(__dirname, "bitcoin-pay.d.ts");
     const typesDest = join(distDir, "bitcoin-pay.d.ts");
     const typesContent = readFileSync(typesSource, "utf8");
     writeFileSync(typesDest, typesContent, "utf8");
 
-    // ===== OUTPUT SUMMARY =====
-    console.log(`✅ Built successfully:`);
-    console.log(
-      `   📦 CDN JavaScript: ${cdnOutputPath} (${(
-        cdnMinifyResult.code.length / 1024
-      ).toFixed(2)} KB)`
-    );
-    console.log(
-      `   📦 ESM JavaScript: ${esmOutputPath} (${(
-        esmMinifyResult.code.length / 1024
-      ).toFixed(2)} KB)`
-    );
-    const minifiedCssSize = (cssResult.css.length / 1024).toFixed(2);
-    console.log(`   🎨 CSS: ${cssDest} (${minifiedCssSize} KB)`);
-    console.log(`   📘 TypeScript: ${typesDest}`);
+    const kb = (input) => (input.length / 1024).toFixed(2);
 
-    // Show size comparison
-    const originalJsSize = (
-      readFileSync(join(__dirname, "src", "bitcoin-pay.js"), "utf8").length /
-      1024
-    ).toFixed(2);
-    const originalCssSize = (cssContent.length / 1024).toFixed(2);
-    const cdnJsSize = (cdnMinifyResult.code.length / 1024).toFixed(2);
-    const esmJsSize = (esmMinifyResult.code.length / 1024).toFixed(2);
-
-    console.log(
-      `   📊 CDN JavaScript: ${originalJsSize} KB → ${cdnJsSize} KB (bundled, no exports)`
-    );
-    console.log(
-      `   📊 ESM JavaScript: ${originalJsSize} KB → ${esmJsSize} KB (bundled, with exports)`
-    );
-    console.log(`   📊 CSS: ${originalCssSize} KB → ${minifiedCssSize} KB`);
+    console.log("Built successfully:");
+    console.log(`   ${cdnOutputPath} (${kb(cdnMinifyResult.code)} KB)`);
+    console.log(`   ${esmOutputPath} (${kb(esmMinifyResult.code)} KB)`);
+    console.log(`   ${cssDest} (${kb(cssResult.css)} KB)`);
+    console.log(`   ${typesDest}`);
   } catch (error) {
-    console.error("❌ Build failed:", error);
+    console.error("Build failed:", error);
     process.exit(1);
   }
 }

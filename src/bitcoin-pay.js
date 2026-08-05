@@ -1,6 +1,6 @@
 /**
  * Bitcoin Serverless Payments - Client Library
- * A simple, self-custodial solution for accepting private, on-chain Bitcoin payments
+ * Self-custodial widget for accepting private, on-chain Bitcoin payments
  */
 
 import generateQrSvg from "./qr.js";
@@ -64,10 +64,8 @@ class BitcoinPay {
       throw new Error(`BitcoinPay: no elements found matching "${selector}"`);
     }
 
-    // Create instance for default config and utility methods
     const instance = new BitcoinPay();
 
-    // Merge user options with defaults
     const finalConfig = { ...instance.defaultConfig, ...options };
 
     // Create stable cache keys based on endpoint (UTF-8 safe)
@@ -89,7 +87,6 @@ class BitcoinPay {
         bitcoinFallbackAddress
       );
     } catch (error) {
-      // If address fetch fails, all elements fail
       console.error("BitcoinPay: Failed to fetch address", error);
       const errorHTML = `<div style="color: red; padding: 10px; border: 1px solid red; border-radius: 4px;">
         Failed to load Bitcoin payment widget. Please check your configuration.
@@ -100,7 +97,6 @@ class BitcoinPay {
       throw error;
     }
 
-    // Render to each element independently
     const renderPromises = Array.from(targetElements).map((targetElement) =>
       instance.renderToElement(
         targetElement,
@@ -129,11 +125,9 @@ class BitcoinPay {
     lightningDonateText,
     finalConfig
   ) {
-    // Create unique keys for this instance (for DOM elements)
     const instanceId = this.generateInstanceId();
 
     try {
-      // Create the widget HTML (single or dual mode)
       const widgetHTML = lightningAddress
         ? this.createDualWidgetHTML(
             address,
@@ -151,7 +145,6 @@ class BitcoinPay {
           );
       targetElement.innerHTML = widgetHTML;
 
-      // Initialize QR code and copy functionality
       if (lightningAddress) {
         await this.initializeDualWidget(
           address,
@@ -190,7 +183,6 @@ class BitcoinPay {
    * Copy text to clipboard with fallback for insecure origins
    */
   async copyToClipboard(text) {
-    // Try modern clipboard API first
     if (navigator.clipboard && navigator.clipboard.writeText) {
       try {
         await navigator.clipboard.writeText(text);
@@ -248,7 +240,6 @@ class BitcoinPay {
       }
     }
 
-    // Fetch from server if no valid cache
     try {
       const response = await fetch(endpoint);
       if (!response.ok) {
@@ -260,7 +251,6 @@ class BitcoinPay {
         throw new Error("Invalid response: no address field");
       }
 
-      // Store in cache if localStorage is available
       if (this.isLocalStorageAvailable()) {
         localStorage.setItem(addressKey, data.address);
         localStorage.setItem(timestampKey, Date.now().toString());
@@ -282,7 +272,7 @@ class BitcoinPay {
     const qrContainerId = `btc-qr-${instanceId}`;
     const buttonId = `btc-btn-${instanceId}`;
 
-    // Use custom text if provided, otherwise use smart device-detection behavior
+    // Falls back to device-detection prefixes handled in CSS
     const descriptionHTML = bitcoinDonateText
       ? bitcoinDonateText
       : `<span class="prefix-desktop">Scan with</span>
@@ -331,7 +321,7 @@ class BitcoinPay {
     const bitcoinBtnId = `btc-btn-${instanceId}`;
     const lightningBtnId = `lightning-btn-${instanceId}`;
 
-    // Use custom text if provided, otherwise use smart device-detection behavior
+    // Falls back to device-detection prefixes handled in CSS
     const bitcoinDescriptionHTML = bitcoinDonateText
       ? bitcoinDonateText
       : `<span class="prefix-desktop">Scan with</span>
@@ -433,7 +423,6 @@ class BitcoinPay {
     const qrContainerId = `btc-qr-${instanceId}`;
     const buttonId = `btc-btn-${instanceId}`;
 
-    // Render QR code
     const qrContainer = document.getElementById(qrContainerId);
     if (qrContainer) {
       const logoHref =
@@ -449,7 +438,6 @@ class BitcoinPay {
       qrContainer.innerHTML = svg;
     }
 
-    // Initialize copy button
     if (config.showCopyButton) {
       const copyButton = document.getElementById(buttonId);
       if (copyButton) {
@@ -480,7 +468,6 @@ class BitcoinPay {
     const bitcoinBtnId = `btc-btn-${instanceId}`;
     const lightningBtnId = `lightning-btn-${instanceId}`;
 
-    // Render Bitcoin QR code
     const bitcoinQrContainer = document.getElementById(bitcoinQrId);
     if (bitcoinQrContainer) {
       const svg = generateQrSvg({
@@ -492,7 +479,6 @@ class BitcoinPay {
       bitcoinQrContainer.innerHTML = svg;
     }
 
-    // Render Lightning QR code
     const lightningQrContainer = document.getElementById(lightningQrId);
     if (lightningQrContainer) {
       const svg = generateQrSvg({
@@ -504,12 +490,9 @@ class BitcoinPay {
       lightningQrContainer.innerHTML = svg;
     }
 
-    // Initialize tab switching
     this.setupTabs(instanceId);
 
-    // Initialize copy buttons
     if (config.showCopyButton) {
-      // Bitcoin copy button
       const bitcoinCopyButton = document.getElementById(bitcoinBtnId);
       if (bitcoinCopyButton) {
         bitcoinCopyButton.addEventListener("click", async () => {
@@ -528,7 +511,6 @@ class BitcoinPay {
         });
       }
 
-      // Lightning copy button
       const lightningCopyButton = document.getElementById(lightningBtnId);
       if (lightningCopyButton) {
         lightningCopyButton.addEventListener("click", async () => {
@@ -564,13 +546,11 @@ class BitcoinPay {
       btn.addEventListener("click", () => {
         const targetTab = btn.getAttribute("data-tab");
 
-        // Update button states
         tabButtons.forEach((b) => {
           b.classList.remove("active");
         });
         btn.classList.add("active");
 
-        // Show/hide content
         tabContents.forEach((content) => {
           content.classList.remove("active");
           if (content.getAttribute("data-tab") === targetTab) {

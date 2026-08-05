@@ -4,6 +4,9 @@
  * These tests ensure that address generation remains consistent across
  * dependency upgrades. They use known XPUB values with expected addresses
  * for each BIP standard (44, 49, 84, 86).
+ *
+ * A failure means derived addresses have changed: donations would go to
+ * addresses your wallet is not watching. Investigate before merging.
  */
 
 import { describe, it, expect } from "vitest";
