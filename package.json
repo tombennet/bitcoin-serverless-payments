@@ -28,8 +28,6 @@
     "@noble/hashes": "2.2.0",
     "@scure/base": "2.2.0",
     "@scure/bip32": "2.2.0",
-    "cssnano": "8.0.2",
-    "postcss": "8.5.15",
     "terser": "5.49.2",
     "typescript": "6.0.3",
     "vitest": "4.1.10"

@@ -2,8 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { minify } from "terser";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import cssnano from "cssnano";
-import postcss from "postcss";
+import { minifyCss } from "./scripts/css-minify.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -174,13 +173,9 @@ async function build() {
     const cssSource = join(__dirname, "src", "bitcoin-pay.css");
     const cssDest = join(distDir, "bitcoin-pay.min.css");
     const cssContent = readFileSync(cssSource, "utf8");
+    const cssMinified = minifyCss(cssContent);
 
-    const cssResult = await postcss([cssnano()]).process(cssContent, {
-      from: cssSource,
-      to: cssDest,
-    });
-
-    writeFileSync(cssDest, cssResult.css, "utf8");
+    writeFileSync(cssDest, cssMinified, "utf8");
 
     console.log("Copying TypeScript definitions...");
     const typesSource = join(__dirname, "bitcoin-pay.d.ts");
@@ -193,7 +188,7 @@ async function build() {
     console.log("Built successfully:");
     console.log(`   ${cdnOutputPath} (${kb(cdnMinifyResult.code)} KB)`);
     console.log(`   ${esmOutputPath} (${kb(esmMinifyResult.code)} KB)`);
-    console.log(`   ${cssDest} (${kb(cssResult.css)} KB)`);
+    console.log(`   ${cssDest} (${kb(cssMinified)} KB)`);
     console.log(`   ${typesDest}`);
   } catch (error) {
     console.error("Build failed:", error);
