@@ -1,11 +1,10 @@
-import type { Context } from "@netlify/functions";
 import { AddressPoolManager } from "./address-pool.js";
 import {
   validateBitcoinEnvironment,
   createValidationErrorResponse,
 } from "./validation.js";
 
-export default async (req: Request, context: Context) => {
+export default async () => {
   try {
     // Validate required environment variables
     const { xpub, derivationPath } = validateBitcoinEnvironment();
