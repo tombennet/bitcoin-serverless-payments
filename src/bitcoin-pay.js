@@ -5,6 +5,29 @@
 
 import generateQrSvg from "./qr.js";
 
+/** Base58Check (P2PKH "1...", P2SH "3...") and Bech32/Bech32m (SegWit "bc1...") */
+const BITCOIN_ADDRESS_PATTERN =
+  /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{6,87})$/;
+
+/**
+ * Format check applied before an address is rendered, encoded into a QR code,
+ * or cached. Rejects anything that could alter the surrounding markup, but
+ * cannot tell you an address belongs to the intended recipient.
+ */
+function isValidBitcoinAddress(address) {
+  return typeof address === "string" && BITCOIN_ADDRESS_PATTERN.test(address);
+}
+
+/** Escape a value for interpolation into markup */
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 class BitcoinPay {
   constructor() {
     this.version = "0.0.0"; // Auto-injected from package.json during build
@@ -53,6 +76,12 @@ class BitcoinPay {
 
     if (!bitcoinFallbackAddress) {
       throw new Error("BitcoinPay: bitcoinFallbackAddress is required");
+    }
+
+    if (!isValidBitcoinAddress(bitcoinFallbackAddress)) {
+      throw new Error(
+        "BitcoinPay: bitcoinFallbackAddress is not a valid Bitcoin address"
+      );
     }
 
     if (!selector) {
@@ -226,7 +255,8 @@ class BitcoinPay {
       Math.min(config.cacheDuration, 604800000)
     );
 
-    // Check localStorage cache if available
+    // The cache is untrusted: anything with write access to this origin's
+    // storage could otherwise substitute an address and redirect payments.
     if (this.isLocalStorageAvailable()) {
       const storedAddress = localStorage.getItem(addressKey);
       const storedTimestamp = localStorage.getItem(timestampKey);
@@ -235,7 +265,12 @@ class BitcoinPay {
         const timestamp = parseInt(storedTimestamp);
         const now = Date.now();
         if (now - timestamp < validCacheDuration) {
-          return storedAddress;
+          if (isValidBitcoinAddress(storedAddress)) {
+            return storedAddress;
+          }
+          console.warn("BitcoinPay: discarding invalid cached address");
+          localStorage.removeItem(addressKey);
+          localStorage.removeItem(timestampKey);
         }
       }
     }
@@ -249,6 +284,9 @@ class BitcoinPay {
       const data = await response.json();
       if (!data.address) {
         throw new Error("Invalid response: no address field");
+      }
+      if (!isValidBitcoinAddress(data.address)) {
+        throw new Error("Invalid response: address is not a Bitcoin address");
       }
 
       if (this.isLocalStorageAvailable()) {
@@ -279,10 +317,12 @@ class BitcoinPay {
               <span class="prefix-touch">Tap to open</span>
               your Bitcoin wallet, or copy the on-chain address below.`;
 
+    const safeAddress = escapeHtml(address);
+
     return `
       <div class="bitcoin-pay-widget">
         <div class="widget-layout">
-          <a href="bitcoin:${address}" class="qr-container" aria-label="Open in Bitcoin wallet">
+          <a href="bitcoin:${safeAddress}" class="qr-container" aria-label="Open in Bitcoin wallet">
             <div id="${qrContainerId}" class="qr-code"></div>
           </a>
           <div class="content-area">
@@ -291,7 +331,7 @@ class BitcoinPay {
             </p>
             <div class="address-container">
               <div class="address-text">
-                <span>${address}</span>
+                <span>${safeAddress}</span>
               </div>
               ${
                 config.showCopyButton
@@ -334,6 +374,9 @@ class BitcoinPay {
               <span class="prefix-touch">Tap to open</span>
               your Lightning wallet, or copy my Lightning address below.`;
 
+    const safeAddress = escapeHtml(address);
+    const safeLightningAddress = escapeHtml(lightningAddress);
+
     return `
       <div class="bitcoin-pay-widget has-tabs">
         <div class="widget-content">
@@ -367,7 +410,7 @@ class BitcoinPay {
           <!-- Bitcoin Tab Content -->
           <div id="bitcoin-content-${instanceId}" class="tab-content active" data-tab="bitcoin">
             <div class="widget-layout">
-              <a href="bitcoin:${address}" class="qr-container" aria-label="Open in Bitcoin wallet">
+              <a href="bitcoin:${safeAddress}" class="qr-container" aria-label="Open in Bitcoin wallet">
                 <div id="${bitcoinQrId}" class="qr-code"></div>
               </a>
               <div class="content-area">
@@ -376,7 +419,7 @@ class BitcoinPay {
                 </p>
                 <div class="address-container">
                   <div class="address-text">
-                    <span>${address}</span>
+                    <span>${safeAddress}</span>
                   </div>
                   ${
                     config.showCopyButton
@@ -391,7 +434,7 @@ class BitcoinPay {
           <!-- Lightning Tab Content -->
           <div id="lightning-content-${instanceId}" class="tab-content" data-tab="lightning">
             <div class="widget-layout">
-              <a href="lightning:${lightningAddress}" class="qr-container" aria-label="Open in Lightning wallet">
+              <a href="lightning:${safeLightningAddress}" class="qr-container" aria-label="Open in Lightning wallet">
                 <div id="${lightningQrId}" class="qr-code"></div>
               </a>
               <div class="content-area">
@@ -400,7 +443,7 @@ class BitcoinPay {
                 </p>
                 <div class="address-container">
                   <div class="address-text">
-                    <span>${lightningAddress}</span>
+                    <span>${safeLightningAddress}</span>
                   </div>
                   ${
                     config.showCopyButton
