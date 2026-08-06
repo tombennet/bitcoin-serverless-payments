@@ -1,6 +1,6 @@
 {
   "name": "bitcoin-serverless-donations",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "author": "https://github.com/bennet-org/bitcoin-serverless-donations",
   "license": "MIT",
   "repository": {
@@ -24,8 +24,8 @@
   },
   "devDependencies": {
     "@netlify/blobs": "10.7.12",
-    "@noble/curves": "2.2.0",
-    "@noble/hashes": "2.2.0",
+    "@noble/curves": "2.3.0",
+    "@noble/hashes": "2.3.0",
     "@scure/base": "2.2.0",
     "@scure/bip32": "2.2.0",
     "@types/node": "24.13.3",
