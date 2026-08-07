@@ -2,9 +2,7 @@
 
 ## Reporting a vulnerability
 
-Report privately via [GitHub Security Advisories](https://github.com/bennet-org/bitcoin-serverless-donations/security/advisories/new) rather than opening a public issue. Include steps to reproduce and the impact you believe it has.
-
-Fixes are released against the latest published version only.
+Report privately via email (hello@bennet.org) or [GitHub Security Advisories](https://github.com/bennet-org/bitcoin-serverless-donations/security/advisories/new) rather than opening a public issue. Include steps to reproduce and the impact you believe it has.
 
 ## Scope
 
@@ -17,7 +15,7 @@ Most relevant, in rough order of severity:
 ## Documented behaviour, not vulnerabilities
 
 - `bitcoinDonateText`, `lightningDonateText`, `copyButtonText` and `copiedText` are inserted as raw HTML (see [README](README.md))
-- Used-address detection discloses your whole address pool to mempool.space (see [TECHNICAL.md](TECHNICAL.md))
+- Used-address detection discloses addresses to mempool.space by default (see [TECHNICAL.md](TECHNICAL.md))
 - Address validation confirms an address is well formed, not that it belongs to you — always check derived addresses against your wallet before accepting donations
 
 ## For operators
